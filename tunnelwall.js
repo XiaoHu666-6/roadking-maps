@@ -1,15 +1,15 @@
 'use strict';
 // ============ 隧道壁驾驶 ============
-// 车速 > 300，靠近隧道壁 → 沿内壁跑（左右墙 + 顶部）
-// 车头朝向沿圆周切线，车身贴壁
+// 车速 > 300 → 按方向键 → 车沿隧道内壁跑（贴圆柱面）
+// carLocalX = R·sin(θ)，carY = R - R·cos(θ)（θ 是圆周角）
 (function(){
     var SPEED_MIN = 300;
     var WALL_R = 11;
-    var PHI_SPEED = 1.6;          // 圆周角速度 rad/s
-    var WALL_ENTER_X = 4.5;       // |carLocalX| 超过此值才允许上墙
+    var THETA_SPEED = 1.6;
+    var WALL_ENTER_X = 4.0;
 
     var onWall = false;
-    var phi = Math.PI / 2;        // 圆周角：0=右墙, π/2=顶部, π=左墙
+    var theta = 0;
     var dead = false;
     var deadOverlay = null;
 
@@ -39,7 +39,7 @@
     function restart(){
         dead = false;
         onWall = false;
-        phi = Math.PI / 2;
+        theta = 0;
         if (deadOverlay) deadOverlay.style.display = 'none';
         if (typeof carLocalX !== 'undefined') carLocalX = 0;
         if (typeof carHeading !== 'undefined') carHeading = 0;
@@ -77,58 +77,42 @@
         var speedOK = kmh > SPEED_MIN;
 
         if (onWall){
-            // ===== 在墙上 =====
             if (!speedOK){
                 showDeath();
                 return;
             }
 
-            // ★ 按左键（steerInput > 0）→ phi 增加 → 往左墙方向
-            //   按右键（steerInput < 0）→ phi 减小 → 往右墙方向
-            //   但 phi 限制在 [0, π]（只在右墙到左墙之间）
-            if (steerInput > 0.3){
-                phi += PHI_SPEED * dt;
-            } else if (steerInput < -0.3){
-                phi -= PHI_SPEED * dt;
+            // 按右键 → theta 增加（右墙→顶部）；按左键 → theta 减小（左墙→顶部）
+            if (steerInput < -0.3){
+                theta += THETA_SPEED * dt;
+            } else if (steerInput > 0.3){
+                theta -= THETA_SPEED * dt;
             }
-            phi = Math.max(0, Math.min(Math.PI, phi));
 
-            // ★ 位置：圆周参数化
-            carLocalX = WALL_R * Math.cos(phi);
-            carY = WALL_R + WALL_R * Math.sin(phi);
+            // ★ 位置：贴着半径 R 的圆柱面
+            carLocalX = WALL_R * Math.sin(theta);
+            carY = WALL_R - WALL_R * Math.cos(theta);
 
-            // ★ 车头朝向切线方向：切线 = (-sin φ, cos φ)
-            //   用 rotation.x（pitch）表示"车头抬起/俯冲"
-            //   phi=0 (右墙) → 车头朝上 → pitch = -π/2
-            //   phi=π/2 (顶部) → 车头朝前 → pitch = 0
-            //   phi=π (左墙) → 车头朝下 → pitch = π/2
-            var pitch = phi - Math.PI / 2;
-            // 车身侧倾（贴壁）
-            var roll = phi - Math.PI / 2;
-            if (typeof playerCar !== 'undefined' && playerCar){
-                playerCar.rotation.x = pitch;
-                playerCar.rotation.z = roll;
-            }
-            // 车头 yaw 保持 -z 方向
+            // ★ 车头始终朝前，不改 carHeading
             if (typeof carHeading !== 'undefined') carHeading = 0;
 
+            // ★ 车身翻滚，贴合墙面
+            if (typeof playerCar !== 'undefined' && playerCar){
+                playerCar.rotation.x = 0;
+                playerCar.rotation.z = -theta;
+            }
+
         } else {
-            // ===== 地面开车，检查是否进入墙模式 =====
-            // 恢复车身姿态
+            // 地面上 → 恢复姿态
             if (typeof playerCar !== 'undefined' && playerCar){
                 playerCar.rotation.z = 0;
             }
 
+            // 靠近隧道壁 + 速度 > 300 + 按方向键 → 进入墙模式
             if (speedOK && Math.abs(steerInput) > 0.3 && Math.abs(carLocalX) > WALL_ENTER_X){
                 onWall = true;
-                // ★ 根据 carLocalX 反推 phi
-                //   carLocalX > 0（右墙）：phi = acos(carLocalX / R) ∈ [0, π/2]
-                //   carLocalX < 0（左墙）：phi = acos(carLocalX / R) ∈ [π/2, π]
                 var xr = Math.max(-0.99, Math.min(0.99, carLocalX / WALL_R));
-                phi = Math.acos(xr);
-                // 如果玩家按右键进入，phi 应更靠近 0；按左键进入，更靠近 π
-                // acos 已经处理了这个逻辑（carLocalX > 0 → phi 靠近 0）
-
+                theta = Math.asin(xr);
                 window._tunnelOnWall = true;
                 window._tunnelNoClamp = true;
                 if (typeof showToast === 'function') showToast('🧗 隧道壁模式！');
@@ -144,7 +128,7 @@
         isOnWall: function(){ return onWall; },
         restart: restart,
         reset: function(){
-            dead = false; onWall = false; phi = Math.PI / 2;
+            dead = false; onWall = false; theta = 0;
             if (deadOverlay) deadOverlay.style.display = 'none';
             window._tunnelOnWall = false;
             window._tunnelNoClamp = false;
