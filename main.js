@@ -967,8 +967,8 @@ function animate(){
             else window.playerCatchupBoost += Math.max(boostDiff, -0.8 * dt);
 
             if(window.HANDBRAKE180 && window.HANDBRAKE180.update) window.HANDBRAKE180.update(dt);
-if(window.TUNNELWALL && window.TUNNELWALL.update) window.TUNNELWALL.update(dt);
 updatePhysics(dt);
+if(window.TUNNELWALL && window.TUNNELWALL.update) window.TUNNELWALL.update(dt);
 if(window.MULTIPLAYER && window.MULTIPLAYER.tick) window.MULTIPLAYER.tick(dt);
 if(window.SPEEDCRASH && window.SPEEDCRASH.update) window.SPEEDCRASH.update();
 if(window.TRICK) window.TRICK.tick();

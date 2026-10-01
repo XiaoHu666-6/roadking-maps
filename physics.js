@@ -154,7 +154,9 @@ var yawRate = steerSmooth * V.steerRate * speedFactor * Math.sign(carSpeed || 1)
 if(!(window.HANDBRAKE180 && window.HANDBRAKE180.isActive && window.HANDBRAKE180.isActive())){
     carHeading += yawRate * dt;
 }
-        carLocalX -= steerSmooth * Math.abs(carSpeed) * 0.12 * dt;
+        if (!window._tunnelOnWall){
+    carLocalX -= steerSmooth * Math.abs(carSpeed) * 0.12 * dt;
+}
         if(steeringMesh) steeringMesh.rotation.z = steerSmooth * 1.2;
 
         // ★ 氮气收集：极限速度（≥90% 极速）
@@ -210,7 +212,7 @@ if(window.HANDBRAKE180 && window.HANDBRAKE180.getLockHeading){
     playerCar.position.z += fz * carSpeed * dt;
 
    var carHalfW = V.width/2, hitRail = false;
-if(!window._tunnelNoClamp){
+if (!window._tunnelNoClamp){
     if(carLocalX - carHalfW < -RAIL_X + 0.05){ carLocalX = -RAIL_X + 0.05 + carHalfW; hitRail = true; }
     if(carLocalX + carHalfW > RAIL_X - 0.05){ carLocalX = RAIL_X - 0.05 - carHalfW; hitRail = true; }
 }
