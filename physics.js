@@ -152,7 +152,9 @@ function updatePhysics(dt){
 var yawRate = steerSmooth * V.steerRate * speedFactor * Math.sign(carSpeed || 1) * Math.min(1, speedMS / 3);
 // ★ 悬浮掉头期间：禁止转向改车头（由 HANDBRAKE180 接管）
 if(!(window.HANDBRAKE180 && window.HANDBRAKE180.isActive && window.HANDBRAKE180.isActive())){
+    if (!window._tunnelOnWall){
     carHeading += yawRate * dt;
+}
 }
         if (!window._tunnelOnWall){
     carLocalX -= steerSmooth * Math.abs(carSpeed) * 0.12 * dt;

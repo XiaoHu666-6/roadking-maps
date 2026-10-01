@@ -1,16 +1,14 @@
 'use strict';
 // ============ 隧道壁驾驶 ============
-// 车速 > 300 km/h，按左右方向键 → 沿隧道内壁转圈
-// 到顶部后继续按 → 从另一侧下来
-// 车速 < 300 km/h → 从墙上掉落 → "你无了"
 (function(){
-    var SPEED_MIN = 300;         // 最低车速
-    var WALL_R = 11;             // 隧道内壁半径（跟 tunnel.js 一致）
-    var THETA_SPEED = 1.8;       // 转圈角速度（弧度/秒）
-    var WALL_ENTER_X = 3.5;      // carLocalX 超过这个值才允许上墙
+    var SPEED_MIN = 300;
+    var WALL_R = 11;
+    var THETA_SPEED = 1.6;
+    var WALL_ENTER_X = 3.5;
 
     var onWall = false;
-    var theta = 0;               // 0=底部  π/2=右侧  π=顶部  -π/2=左侧
+    var theta = 0;
+    var entered = false;    // 已经爬到一定高度（防止刚进入就退出）
     var dead = false;
     var deadOverlay = null;
 
@@ -40,6 +38,7 @@
     function restart(){
         dead = false;
         onWall = false;
+        entered = false;
         theta = 0;
         if (deadOverlay) deadOverlay.style.display = 'none';
         if (typeof carLocalX !== 'undefined') carLocalX = 0;
@@ -66,6 +65,7 @@
         if (!isTunnel()){
             if (onWall){
                 onWall = false;
+                entered = false;
                 theta = 0;
                 window._tunnelOnWall = false;
                 window._tunnelNoClamp = false;
@@ -85,33 +85,40 @@
                 return;
             }
 
-            // 玩家转向 → theta 变化
-            if (steerInput > 0.3) theta += THETA_SPEED * dt;
-            else if (steerInput < -0.3) theta -= THETA_SPEED * dt;
+            // ★ 关键修复：theta 变化方向跟"车往哪边爬"一致
+            // 按右键（steerInput < 0）→ 车往右移 → theta 增加
+            // 按左键（steerInput > 0）→ 车往左移 → theta 减小
+            if (steerInput < -0.3){
+                theta += THETA_SPEED * dt;
+            } else if (steerInput > 0.3){
+                theta -= THETA_SPEED * dt;
+            }
 
-            // 归一化到 -π 到 π
-            while (theta > Math.PI) theta -= 2 * Math.PI;
-            while (theta < -Math.PI) theta += 2 * Math.PI;
+            // 归一化到 0 ~ 2π
+            while (theta < 0) theta += Math.PI * 2;
+            while (theta >= Math.PI * 2) theta -= Math.PI * 2;
 
-            // 车在半径 R 的圆弧上：
-            //   theta = 0    → carLocalX=0,      carY=0       （地面中心）
-            //   theta = π/2  → carLocalX=R,      carY=R       （右侧墙）
-            //   theta = π    → carLocalX=0,      carY=2R      （顶部）
-            //   theta = -π/2 → carLocalX=-R,     carY=R       （左侧墙）
+            // 圆弧位置：theta=0 地面中心，π/2 右墙，π 顶部，3π/2 左墙
             carLocalX = WALL_R * Math.sin(theta);
             carY = WALL_R * (1 - Math.cos(theta));
 
+            // 车头固定朝前方（不随方向键转向）
+            carHeading = 0;
+
             // 车身侧倾（贴合墙面）
             if (typeof playerCar !== 'undefined' && playerCar){
-                playerCar.rotation.z = -theta * 0.6;
+                playerCar.rotation.z = -theta;
             }
 
-            // 车头朝向：跟随切线（沿墙前后）
-            // 保持 carHeading 不变即可（车始终朝 -z 方向跑）
+            // 已经爬到一定高度 → 允许退出
+            if (theta > 0.3 && theta < Math.PI * 2 - 0.3){
+                entered = true;
+            }
 
-            // 回到地面 → 退出墙模式
-            if (Math.abs(theta) < 0.2){
+            // 回到地面附近 → 退出墙模式
+            if (entered && theta < 0.15){
                 onWall = false;
+                entered = false;
                 theta = 0;
                 carLocalX = 0;
                 carY = 0;
@@ -121,11 +128,17 @@
                 if (typeof showToast === 'function') showToast('✅ 安全落地');
             }
         } else {
-            // ===== 不在墙上 =====
+            // ===== 不在墙上，检查是否进入 =====
             if (speedOK && Math.abs(steerInput) > 0.3 && Math.abs(carLocalX) > WALL_ENTER_X){
-                // 进入墙模式
                 onWall = true;
-                theta = Math.sign(carLocalX) * 0.3;
+                entered = false;
+
+                // ★ 关键修复：从当前 carLocalX 对应的角度开始，不跳变
+                var sinVal = Math.max(-1, Math.min(1, carLocalX / WALL_R));
+                theta = Math.asin(sinVal);
+                if (carLocalX < 0) theta = Math.PI * 2 - Math.abs(theta);  // 左半边
+                // 右半边保持 asin 结果（0 ~ π/2）
+
                 window._tunnelOnWall = true;
                 window._tunnelNoClamp = true;
                 if (typeof showToast === 'function') showToast('🧗 隧道壁模式！');
@@ -141,7 +154,7 @@
         isOnWall: function(){ return onWall; },
         restart: restart,
         reset: function(){
-            dead = false; onWall = false; theta = 0;
+            dead = false; onWall = false; entered = false; theta = 0;
             if (deadOverlay) deadOverlay.style.display = 'none';
             window._tunnelOnWall = false;
             window._tunnelNoClamp = false;
