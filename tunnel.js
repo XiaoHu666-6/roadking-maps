@@ -84,6 +84,15 @@ function updateTunnelScene(){
     tunnelWallInst.instanceMatrix.needsUpdate = true;
     tunnelLightInst.instanceMatrix.needsUpdate = true;
     tunnelGlowInst.instanceMatrix.needsUpdate = true;
+
+    // ★ 隧道内不显示卡车（隐藏 + 移走）
+    if (typeof npcTruckBodyMesh !== 'undefined' && npcTruckBodyMesh) npcTruckBodyMesh.visible = false;
+    if (typeof npcTruckDetailMesh !== 'undefined' && npcTruckDetailMesh) npcTruckDetailMesh.visible = false;
+    if (typeof trucks !== 'undefined' && trucks){
+        for (var t = 0; t < trucks.length; t++){
+            trucks[t].z = -99999;   // 移到远方，避免碰撞
+        }
+    }
 }
 
 function setTunnelVisible(show){
@@ -111,4 +120,8 @@ function setTunnelVisible(show){
     if(typeof lampGlowInst !== 'undefined' && lampGlowInst) lampGlowInst.visible = !show;
     if(typeof signPoleInst !== 'undefined' && signPoleInst) signPoleInst.visible = !show;
     if(typeof signBoardInst !== 'undefined' && signBoardInst) signBoardInst.visible = !show;
+
+    // ★ 隧道模式隐藏卡车，其他场景恢复
+    if(typeof npcTruckBodyMesh !== 'undefined' && npcTruckBodyMesh) npcTruckBodyMesh.visible = !show;
+    if(typeof npcTruckDetailMesh !== 'undefined' && npcTruckDetailMesh) npcTruckDetailMesh.visible = !show;
 }

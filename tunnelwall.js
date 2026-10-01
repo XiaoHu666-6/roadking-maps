@@ -1,14 +1,15 @@
 'use strict';
 // ============ 隧道壁驾驶 ============
-// 车速 > 300 km/h → 按方向键 → 车沿隧道内壁跑（左右墙 + 顶部）
-// carLocalX 由玩家控制，carY 由 carLocalX 推导（保证贴在半圆内壁上）
+// 车速 > 300，靠近隧道壁 → 沿内壁跑（左右墙 + 顶部）
+// 车头朝向沿圆周切线，车身贴壁
 (function(){
     var SPEED_MIN = 300;
-    var WALL_R = 11;               // 隧道半径
-    var LATERAL_SPEED = 10;        // 按方向键时 carLocalX 变化速度（m/s）
-    var WALL_ENTER_X = 3.5;        // carLocalX 超过此值才允许上墙
+    var WALL_R = 11;
+    var PHI_SPEED = 1.6;          // 圆周角速度 rad/s
+    var WALL_ENTER_X = 6.0;       // |carLocalX| 超过此值才允许上墙
 
     var onWall = false;
+    var phi = Math.PI / 2;        // 圆周角：0=右墙, π/2=顶部, π=左墙
     var dead = false;
     var deadOverlay = null;
 
@@ -38,6 +39,7 @@
     function restart(){
         dead = false;
         onWall = false;
+        phi = Math.PI / 2;
         if (deadOverlay) deadOverlay.style.display = 'none';
         if (typeof carLocalX !== 'undefined') carLocalX = 0;
         if (typeof carHeading !== 'undefined') carHeading = 0;
@@ -81,40 +83,52 @@
                 return;
             }
 
-            // ★ 玩家方向键直接控制 carLocalX
-            //  按右键 → carLocalX 增加（往右走）
-            //  按左键 → carLocalX 减小（往左走）
-            if (steerInput < -0.3){
-                carLocalX += LATERAL_SPEED * dt;
-            } else if (steerInput > 0.3){
-                carLocalX -= LATERAL_SPEED * dt;
+            // ★ 按左键（steerInput > 0）→ phi 增加 → 往左墙方向
+            //   按右键（steerInput < 0）→ phi 减小 → 往右墙方向
+            //   但 phi 限制在 [0, π]（只在右墙到左墙之间）
+            if (steerInput > 0.3){
+                phi += PHI_SPEED * dt;
+            } else if (steerInput < -0.3){
+                phi -= PHI_SPEED * dt;
             }
-            // 限制在 [-R, R]
-            carLocalX = Math.max(-WALL_R * 0.99, Math.min(WALL_R * 0.99, carLocalX));
+            phi = Math.max(0, Math.min(Math.PI, phi));
 
-            // ★ 从 carLocalX 推导 carY（上半圆内壁）
-            //  x² + (y-R)² = R²  →  y = R + sqrt(R² - x²)
-            var dx = carLocalX / WALL_R;
-            var dy = Math.sqrt(Math.max(0, 1 - dx * dx));
-            carY = WALL_R + WALL_R * dy;   // carY ∈ [R, 2R]
+            // ★ 位置：圆周参数化
+            carLocalX = WALL_R * Math.cos(phi);
+            carY = WALL_R + WALL_R * Math.sin(phi);
 
-            // ★ 车头固定朝前（-z 方向），不随方向键转
-            carHeading = 0;
-
-            // ★ 车身侧倾（贴合墙面）：carLocalX = R → 车翻转 90°
+            // ★ 车头朝向切线方向：切线 = (-sin φ, cos φ)
+            //   用 rotation.x（pitch）表示"车头抬起/俯冲"
+            //   phi=0 (右墙) → 车头朝上 → pitch = -π/2
+            //   phi=π/2 (顶部) → 车头朝前 → pitch = 0
+            //   phi=π (左墙) → 车头朝下 → pitch = π/2
+            var pitch = phi - Math.PI / 2;
+            // 车身侧倾（贴壁）
+            var roll = phi - Math.PI / 2;
             if (typeof playerCar !== 'undefined' && playerCar){
-                playerCar.rotation.z = -dx * Math.PI / 2;
+                playerCar.rotation.x = pitch;
+                playerCar.rotation.z = roll;
             }
+            // 车头 yaw 保持 -z 方向
+            if (typeof carHeading !== 'undefined') carHeading = 0;
 
         } else {
             // ===== 地面开车，检查是否进入墙模式 =====
+            // 恢复车身姿态
+            if (typeof playerCar !== 'undefined' && playerCar){
+                playerCar.rotation.z = 0;
+            }
+
             if (speedOK && Math.abs(steerInput) > 0.3 && Math.abs(carLocalX) > WALL_ENTER_X){
                 onWall = true;
-                // 把 carLocalX 拉到"墙的中部"附近（避免从边缘开始）
-                carLocalX = Math.sign(carLocalX) * WALL_R * 0.7;
-                var dx2 = carLocalX / WALL_R;
-                var dy2 = Math.sqrt(Math.max(0, 1 - dx2 * dx2));
-                carY = WALL_R + WALL_R * dy2;
+                // ★ 根据 carLocalX 反推 phi
+                //   carLocalX > 0（右墙）：phi = acos(carLocalX / R) ∈ [0, π/2]
+                //   carLocalX < 0（左墙）：phi = acos(carLocalX / R) ∈ [π/2, π]
+                var xr = Math.max(-0.99, Math.min(0.99, carLocalX / WALL_R));
+                phi = Math.acos(xr);
+                // 如果玩家按右键进入，phi 应更靠近 0；按左键进入，更靠近 π
+                // acos 已经处理了这个逻辑（carLocalX > 0 → phi 靠近 0）
+
                 window._tunnelOnWall = true;
                 window._tunnelNoClamp = true;
                 if (typeof showToast === 'function') showToast('🧗 隧道壁模式！');
@@ -130,11 +144,14 @@
         isOnWall: function(){ return onWall; },
         restart: restart,
         reset: function(){
-            dead = false; onWall = false;
+            dead = false; onWall = false; phi = Math.PI / 2;
             if (deadOverlay) deadOverlay.style.display = 'none';
             window._tunnelOnWall = false;
             window._tunnelNoClamp = false;
-            if (typeof playerCar !== 'undefined' && playerCar) playerCar.rotation.z = 0;
+            if (typeof playerCar !== 'undefined' && playerCar){
+                playerCar.rotation.z = 0;
+                playerCar.rotation.x = 0;
+            }
         }
     };
 })();
