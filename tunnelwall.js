@@ -1,14 +1,14 @@
 'use strict';
 // ============ 隧道壁驾驶 ============
+// 车速 > 300 km/h → 按方向键 → 车沿隧道内壁跑（左右墙 + 顶部）
+// carLocalX 由玩家控制，carY 由 carLocalX 推导（保证贴在半圆内壁上）
 (function(){
     var SPEED_MIN = 300;
-    var WALL_R = 11;
-    var THETA_SPEED = 1.6;
-    var WALL_ENTER_X = 3.5;
+    var WALL_R = 11;               // 隧道半径
+    var LATERAL_SPEED = 10;        // 按方向键时 carLocalX 变化速度（m/s）
+    var WALL_ENTER_X = 3.5;        // carLocalX 超过此值才允许上墙
 
     var onWall = false;
-    var theta = 0;
-    var entered = false;    // 已经爬到一定高度（防止刚进入就退出）
     var dead = false;
     var deadOverlay = null;
 
@@ -38,8 +38,6 @@
     function restart(){
         dead = false;
         onWall = false;
-        entered = false;
-        theta = 0;
         if (deadOverlay) deadOverlay.style.display = 'none';
         if (typeof carLocalX !== 'undefined') carLocalX = 0;
         if (typeof carHeading !== 'undefined') carHeading = 0;
@@ -65,8 +63,6 @@
         if (!isTunnel()){
             if (onWall){
                 onWall = false;
-                entered = false;
-                theta = 0;
                 window._tunnelOnWall = false;
                 window._tunnelNoClamp = false;
                 if (typeof playerCar !== 'undefined' && playerCar) playerCar.rotation.z = 0;
@@ -85,60 +81,40 @@
                 return;
             }
 
-            // ★ 关键修复：theta 变化方向跟"车往哪边爬"一致
-            // 按右键（steerInput < 0）→ 车往右移 → theta 增加
-            // 按左键（steerInput > 0）→ 车往左移 → theta 减小
+            // ★ 玩家方向键直接控制 carLocalX
+            //  按右键 → carLocalX 增加（往右走）
+            //  按左键 → carLocalX 减小（往左走）
             if (steerInput < -0.3){
-                theta += THETA_SPEED * dt;
+                carLocalX += LATERAL_SPEED * dt;
             } else if (steerInput > 0.3){
-                theta -= THETA_SPEED * dt;
+                carLocalX -= LATERAL_SPEED * dt;
             }
+            // 限制在 [-R, R]
+            carLocalX = Math.max(-WALL_R * 0.99, Math.min(WALL_R * 0.99, carLocalX));
 
-            // 归一化到 0 ~ 2π
-            while (theta < 0) theta += Math.PI * 2;
-            while (theta >= Math.PI * 2) theta -= Math.PI * 2;
+            // ★ 从 carLocalX 推导 carY（上半圆内壁）
+            //  x² + (y-R)² = R²  →  y = R + sqrt(R² - x²)
+            var dx = carLocalX / WALL_R;
+            var dy = Math.sqrt(Math.max(0, 1 - dx * dx));
+            carY = WALL_R + WALL_R * dy;   // carY ∈ [R, 2R]
 
-            // 圆弧位置：theta=0 地面中心，π/2 右墙，π 顶部，3π/2 左墙
-            carLocalX = WALL_R * Math.sin(theta);
-            carY = WALL_R * (1 - Math.cos(theta));
-
-            // 车头固定朝前方（不随方向键转向）
+            // ★ 车头固定朝前（-z 方向），不随方向键转
             carHeading = 0;
 
-            // 车身侧倾（贴合墙面）
+            // ★ 车身侧倾（贴合墙面）：carLocalX = R → 车翻转 90°
             if (typeof playerCar !== 'undefined' && playerCar){
-                playerCar.rotation.z = -theta;
+                playerCar.rotation.z = -dx * Math.PI / 2;
             }
 
-            // 已经爬到一定高度 → 允许退出
-            if (theta > 0.3 && theta < Math.PI * 2 - 0.3){
-                entered = true;
-            }
-
-            // 回到地面附近 → 退出墙模式
-            if (entered && theta < 0.15){
-                onWall = false;
-                entered = false;
-                theta = 0;
-                carLocalX = 0;
-                carY = 0;
-                window._tunnelOnWall = false;
-                window._tunnelNoClamp = false;
-                if (typeof playerCar !== 'undefined' && playerCar) playerCar.rotation.z = 0;
-                if (typeof showToast === 'function') showToast('✅ 安全落地');
-            }
         } else {
-            // ===== 不在墙上，检查是否进入 =====
+            // ===== 地面开车，检查是否进入墙模式 =====
             if (speedOK && Math.abs(steerInput) > 0.3 && Math.abs(carLocalX) > WALL_ENTER_X){
                 onWall = true;
-                entered = false;
-
-                // ★ 关键修复：从当前 carLocalX 对应的角度开始，不跳变
-                var sinVal = Math.max(-1, Math.min(1, carLocalX / WALL_R));
-                theta = Math.asin(sinVal);
-                if (carLocalX < 0) theta = Math.PI * 2 - Math.abs(theta);  // 左半边
-                // 右半边保持 asin 结果（0 ~ π/2）
-
+                // 把 carLocalX 拉到"墙的中部"附近（避免从边缘开始）
+                carLocalX = Math.sign(carLocalX) * WALL_R * 0.7;
+                var dx2 = carLocalX / WALL_R;
+                var dy2 = Math.sqrt(Math.max(0, 1 - dx2 * dx2));
+                carY = WALL_R + WALL_R * dy2;
                 window._tunnelOnWall = true;
                 window._tunnelNoClamp = true;
                 if (typeof showToast === 'function') showToast('🧗 隧道壁模式！');
@@ -154,7 +130,7 @@
         isOnWall: function(){ return onWall; },
         restart: restart,
         reset: function(){
-            dead = false; onWall = false; entered = false; theta = 0;
+            dead = false; onWall = false;
             if (deadOverlay) deadOverlay.style.display = 'none';
             window._tunnelOnWall = false;
             window._tunnelNoClamp = false;
