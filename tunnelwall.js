@@ -6,7 +6,7 @@
     var SPEED_MIN = 300;
     var WALL_R = 11;
     var PHI_SPEED = 1.6;          // 圆周角速度 rad/s
-    var WALL_ENTER_X = 6.0;       // |carLocalX| 超过此值才允许上墙
+    var WALL_ENTER_X = 4.5;       // |carLocalX| 超过此值才允许上墙
 
     var onWall = false;
     var phi = Math.PI / 2;        // 圆周角：0=右墙, π/2=顶部, π=左墙
